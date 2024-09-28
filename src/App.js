@@ -18,6 +18,7 @@ import {
   Settings
 } from './pages';
 import './styles/global.css';
+import Activities from './pages/Activities';
 
 function App() {
   return (
