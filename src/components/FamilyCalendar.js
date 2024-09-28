@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import { useAuth } from '../contexts/AuthContext';
+import { collection, addDoc, updateDoc, deleteDoc, getDocs, query, where, doc } from 'firebase/firestore';
 import { firestore } from '../firebase';
+import { syncTasksToCalendar, syncMealsToCalendar } from '../services/eventIntegration';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 
 const localizer = momentLocalizer(moment);
@@ -10,65 +12,53 @@ const localizer = momentLocalizer(moment);
 function FamilyCalendar() {
   const { currentUser } = useAuth();
   const [events, setEvents] = useState([]);
-  const [newEvent, setNewEvent] = useState({
-    title: '',
-    start: new Date(),
-    end: new Date(),
-    allDay: false,
-    category: 'general',
-    recurringType: 'none',
-    recurringEndDate: null
-  });
+  const [newEvent, setNewEvent] = useState({ title: '', start: new Date(), end: new Date(), allDay: false, type: 'general' });
+  const [showEventTypes, setShowEventTypes] = useState({ general: true, task: true, meal: true, activity: true });
 
   useEffect(() => {
-    const fetchEvents = async () => {
-      const eventsRef = firestore.collection('families').doc(currentUser.familyId).collection('events');
-      const unsubscribe = eventsRef.onSnapshot(snapshot => {
-        const fetchedEvents = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            title: data.title,
-            start: data.start.toDate(),
-            end: data.end.toDate(),
-            allDay: data.allDay,
-            category: data.category,
-            recurringType: data.recurringType,
-            recurringEndDate: data.recurringEndDate ? data.recurringEndDate.toDate() : null
-          };
-        });
-        setEvents(fetchedEvents);
-      });
+    if (currentUser?.familyId) {
+      fetchEvents();
+      syncTasksToCalendar(currentUser.familyId);
+      syncMealsToCalendar(currentUser.familyId);
+    }
+  }, [currentUser]);
 
-      return () => unsubscribe();
-    };
+  const fetchEvents = async () => {
+    if (!currentUser?.familyId) return;
+    const eventsRef = collection(firestore, 'families', currentUser.familyId, 'events');
+    const snapshot = await getDocs(eventsRef);
+    const fetchedEvents = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      start: doc.data().start.toDate(),
+      end: doc.data().end.toDate()
+    }));
+    setEvents(fetchedEvents);
+  };
 
-    fetchEvents();
-  }, [currentUser.familyId]);
+  const handleSelectSlot = ({ start, end }) => {
+    setNewEvent({ ...newEvent, start, end });
+  };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewEvent(prev => ({ ...prev, [name]: value }));
+  const handleSelectEvent = (event) => {
+    // Implement edit functionality here
+    console.log(event);
   };
 
   const addEvent = async (e) => {
     e.preventDefault();
-    const eventRef = firestore.collection('families').doc(currentUser.familyId).collection('events').doc();
-    await eventRef.set({
-      ...newEvent,
-      start: firestore.Timestamp.fromDate(newEvent.start),
-      end: firestore.Timestamp.fromDate(newEvent.end),
-      recurringEndDate: newEvent.recurringEndDate ? firestore.Timestamp.fromDate(newEvent.recurringEndDate) : null
-    });
-    setNewEvent({
-      title: '',
-      start: new Date(),
-      end: new Date(),
-      allDay: false,
-      category: 'general',
-      recurringType: 'none',
-      recurringEndDate: null
-    });
+    if (!currentUser?.familyId) return;
+    const eventsRef = collection(firestore, 'families', currentUser.familyId, 'events');
+    await addDoc(eventsRef, newEvent);
+    setNewEvent({ title: '', start: new Date(), end: new Date(), allDay: false, type: 'general' });
+    fetchEvents();
+  };
+
+  const deleteEvent = async (eventId) => {
+    if (!currentUser?.familyId) return;
+    const eventRef = doc(firestore, 'families', currentUser.familyId, 'events', eventId);
+    await deleteDoc(eventRef);
+    fetchEvents();
   };
 
   const eventStyleGetter = (event) => {
@@ -81,15 +71,15 @@ function FamilyCalendar() {
       display: 'block'
     };
 
-    switch (event.category) {
-      case 'work':
-        style.backgroundColor = '#ff0000';
+    switch (event.type) {
+      case 'task':
+        style.backgroundColor = '#ff9800';
         break;
-      case 'school':
-        style.backgroundColor = '#00ff00';
+      case 'meal':
+        style.backgroundColor = '#4caf50';
         break;
-      case 'family':
-        style.backgroundColor = '#0000ff';
+      case 'activity':
+        style.backgroundColor = '#e91e63';
         break;
       default:
         break;
@@ -100,69 +90,51 @@ function FamilyCalendar() {
     };
   };
 
+  const filteredEvents = events.filter(event => showEventTypes[event.type]);
+
   return (
     <div className="family-calendar">
       <h2>Family Calendar</h2>
+      <div className="event-type-toggles">
+        {Object.keys(showEventTypes).map(type => (
+          <label key={type}>
+            <input
+              type="checkbox"
+              checked={showEventTypes[type]}
+              onChange={() => setShowEventTypes(prev => ({ ...prev, [type]: !prev[type] }))}
+            />
+            {type.charAt(0).toUpperCase() + type.slice(1)}
+          </label>
+        ))}
+      </div>
       <form onSubmit={addEvent}>
         <input
           type="text"
-          name="title"
           value={newEvent.title}
-          onChange={handleInputChange}
+          onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
           placeholder="Event Title"
           required
         />
-        <input
-          type="datetime-local"
-          name="start"
-          value={moment(newEvent.start).format('YYYY-MM-DDTHH:mm')}
-          onChange={(e) => setNewEvent(prev => ({ ...prev, start: new Date(e.target.value) }))}
-          required
-        />
-        <input
-          type="datetime-local"
-          name="end"
-          value={moment(newEvent.end).format('YYYY-MM-DDTHH:mm')}
-          onChange={(e) => setNewEvent(prev => ({ ...prev, end: new Date(e.target.value) }))}
-          required
-        />
         <select
-          name="category"
-          value={newEvent.category}
-          onChange={handleInputChange}
+          value={newEvent.type}
+          onChange={(e) => setNewEvent({ ...newEvent, type: e.target.value })}
         >
           <option value="general">General</option>
-          <option value="work">Work</option>
-          <option value="school">School</option>
-          <option value="family">Family</option>
+          <option value="task">Task</option>
+          <option value="meal">Meal</option>
+          <option value="activity">Activity</option>
         </select>
-        <select
-          name="recurringType"
-          value={newEvent.recurringType}
-          onChange={handleInputChange}
-        >
-          <option value="none">None</option>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-          <option value="yearly">Yearly</option>
-        </select>
-        {newEvent.recurringType !== 'none' && (
-          <input
-            type="date"
-            name="recurringEndDate"
-            value={newEvent.recurringEndDate ? moment(newEvent.recurringEndDate).format('YYYY-MM-DD') : ''}
-            onChange={(e) => setNewEvent(prev => ({ ...prev, recurringEndDate: new Date(e.target.value) }))}
-          />
-        )}
         <button type="submit">Add Event</button>
       </form>
       <Calendar
         localizer={localizer}
-        events={events}
+        events={filteredEvents}
         startAccessor="start"
         endAccessor="end"
         style={{ height: 500 }}
+        onSelectSlot={handleSelectSlot}
+        onSelectEvent={handleSelectEvent}
+        selectable
         eventPropGetter={eventStyleGetter}
       />
     </div>

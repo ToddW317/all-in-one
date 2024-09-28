@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { collection, addDoc, updateDoc, deleteDoc, getDocs, doc, query, where, orderBy } from 'firebase/firestore';
 import { firestore } from '../firebase';
+import { addEventToCalendar, updateEventInCalendar, deleteEventFromCalendar } from '../services/eventIntegration';
 
 function TaskManager() {
   const { currentUser } = useAuth();
@@ -8,101 +10,127 @@ function TaskManager() {
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
-    assignedTo: '',
+    assignee: '',
     dueDate: '',
     priority: 'medium',
     status: 'not started',
-    isChore: false,
-    recurringType: 'none'
+    isRecurring: false,
+    recurrencePattern: ''
   });
+  const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState('dueDate');
 
   useEffect(() => {
-    const fetchTasks = async () => {
-      const tasksRef = firestore.collection('families').doc(currentUser.familyId).collection('tasks');
-      const unsubscribe = tasksRef.onSnapshot(snapshot => {
-        const fetchedTasks = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setTasks(fetchedTasks);
-      });
-
-      return () => unsubscribe();
-    };
-
     fetchTasks();
-  }, [currentUser.familyId]);
+  }, [currentUser, filter, sort]);
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewTask(prev => ({ ...prev, [name]: value }));
+  const fetchTasks = async () => {
+    if (!currentUser || !currentUser.familyId) return;
+
+    const tasksRef = collection(firestore, 'families', currentUser.familyId, 'tasks');
+    let q = query(tasksRef);
+
+    if (filter !== 'all') {
+      q = query(q, where('status', '==', filter));
+    }
+
+    q = query(q, orderBy(sort, 'asc'));
+
+    const snapshot = await getDocs(q);
+    setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
   };
 
   const addTask = async (e) => {
     e.preventDefault();
-    const taskRef = firestore.collection('families').doc(currentUser.familyId).collection('tasks').doc();
-    await taskRef.set({
+    if (!currentUser || !currentUser.familyId) return;
+
+    const tasksRef = collection(firestore, 'families', currentUser.familyId, 'tasks');
+    const docRef = await addDoc(tasksRef, {
       ...newTask,
-      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAt: new Date(),
       createdBy: currentUser.uid
     });
+
+    await addEventToCalendar(currentUser.familyId, {
+      title: newTask.title,
+      start: new Date(newTask.dueDate),
+      end: new Date(newTask.dueDate),
+      allDay: true,
+      type: 'task',
+      taskId: docRef.id
+    });
+
     setNewTask({
       title: '',
       description: '',
-      assignedTo: '',
+      assignee: '',
       dueDate: '',
       priority: 'medium',
       status: 'not started',
-      isChore: false,
-      recurringType: 'none'
+      isRecurring: false,
+      recurrencePattern: ''
     });
+
+    fetchTasks();
   };
 
-  const updateTaskStatus = async (taskId, newStatus) => {
-    await firestore.collection('families').doc(currentUser.familyId).collection('tasks').doc(taskId).update({
-      status: newStatus
+  const updateTask = async (taskId, updates) => {
+    if (!currentUser || !currentUser.familyId) return;
+
+    const taskRef = doc(firestore, 'families', currentUser.familyId, 'tasks', taskId);
+    await updateDoc(taskRef, updates);
+
+    await updateEventInCalendar(currentUser.familyId, taskId, {
+      title: updates.title,
+      start: new Date(updates.dueDate),
+      end: new Date(updates.dueDate)
     });
+
+    fetchTasks();
   };
 
   const deleteTask = async (taskId) => {
-    await firestore.collection('families').doc(currentUser.familyId).collection('tasks').doc(taskId).delete();
+    if (!currentUser || !currentUser.familyId) return;
+
+    const taskRef = doc(firestore, 'families', currentUser.familyId, 'tasks', taskId);
+    await deleteDoc(taskRef);
+
+    await deleteEventFromCalendar(currentUser.familyId, taskId);
+
+    fetchTasks();
   };
 
   return (
     <div className="task-manager">
       <h2>Task Manager</h2>
+      
       <form onSubmit={addTask}>
         <input
           type="text"
-          name="title"
           value={newTask.title}
-          onChange={handleInputChange}
+          onChange={(e) => setNewTask({...newTask, title: e.target.value})}
           placeholder="Task Title"
           required
         />
         <textarea
-          name="description"
           value={newTask.description}
-          onChange={handleInputChange}
+          onChange={(e) => setNewTask({...newTask, description: e.target.value})}
           placeholder="Task Description"
         />
         <input
           type="text"
-          name="assignedTo"
-          value={newTask.assignedTo}
-          onChange={handleInputChange}
-          placeholder="Assign to"
+          value={newTask.assignee}
+          onChange={(e) => setNewTask({...newTask, assignee: e.target.value})}
+          placeholder="Assignee"
         />
         <input
           type="date"
-          name="dueDate"
           value={newTask.dueDate}
-          onChange={handleInputChange}
+          onChange={(e) => setNewTask({...newTask, dueDate: e.target.value})}
         />
         <select
-          name="priority"
           value={newTask.priority}
-          onChange={handleInputChange}
+          onChange={(e) => setNewTask({...newTask, priority: e.target.value})}
         >
           <option value="low">Low</option>
           <option value="medium">Medium</option>
@@ -111,49 +139,64 @@ function TaskManager() {
         <label>
           <input
             type="checkbox"
-            name="isChore"
-            checked={newTask.isChore}
-            onChange={(e) => setNewTask(prev => ({ ...prev, isChore: e.target.checked }))}
+            checked={newTask.isRecurring}
+            onChange={(e) => setNewTask({...newTask, isRecurring: e.target.checked})}
           />
-          Is this a chore?
+          Recurring Task
         </label>
-        {newTask.isChore && (
-          <select
-            name="recurringType"
-            value={newTask.recurringType}
-            onChange={handleInputChange}
-          >
-            <option value="none">None</option>
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
+        {newTask.isRecurring && (
+          <input
+            type="text"
+            value={newTask.recurrencePattern}
+            onChange={(e) => setNewTask({...newTask, recurrencePattern: e.target.value})}
+            placeholder="Recurrence Pattern (e.g., 'daily', 'weekly on Monday')"
+          />
         )}
         <button type="submit">Add Task</button>
       </form>
-      <div className="task-list">
-        <h3>Tasks and Chores</h3>
+
+      <div>
+        <label>
+          Filter:
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="all">All</option>
+            <option value="not started">Not Started</option>
+            <option value="in progress">In Progress</option>
+            <option value="completed">Completed</option>
+          </select>
+        </label>
+        <label>
+          Sort By:
+          <select value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="dueDate">Due Date</option>
+            <option value="priority">Priority</option>
+            <option value="status">Status</option>
+          </select>
+        </label>
+      </div>
+
+      <ul className="task-list">
         {tasks.map(task => (
-          <div key={task.id} className="task-item">
-            <h4>{task.title}</h4>
+          <li key={task.id} className="task-item">
+            <h3>{task.title}</h3>
             <p>{task.description}</p>
-            <p>Assigned to: {task.assignedTo}</p>
+            <p>Assignee: {task.assignee}</p>
             <p>Due: {task.dueDate}</p>
             <p>Priority: {task.priority}</p>
             <p>Status: {task.status}</p>
-            {task.isChore && <p>Recurring: {task.recurringType}</p>}
+            {task.isRecurring && <p>Recurrence: {task.recurrencePattern}</p>}
             <select
               value={task.status}
-              onChange={(e) => updateTaskStatus(task.id, e.target.value)}
+              onChange={(e) => updateTask(task.id, { status: e.target.value })}
             >
               <option value="not started">Not Started</option>
               <option value="in progress">In Progress</option>
               <option value="completed">Completed</option>
             </select>
             <button onClick={() => deleteTask(task.id)}>Delete</button>
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }

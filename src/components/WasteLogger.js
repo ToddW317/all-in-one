@@ -9,10 +9,13 @@ function WasteLogger() {
   const [newWasteItem, setNewWasteItem] = useState({ item: '', quantity: 1, unit: 'piece', reason: '' });
 
   useEffect(() => {
-    fetchWasteLog();
-  }, [currentUser.familyId]);
+    if (currentUser?.familyId) {
+      fetchWasteLog();
+    }
+  }, [currentUser]);
 
   const fetchWasteLog = async () => {
+    if (!currentUser?.familyId) return;
     const wasteLogRef = firestore.collection('families').doc(currentUser.familyId).collection('wasteLog');
     const snapshot = await wasteLogRef.orderBy('date', 'desc').get();
     setWasteLog(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -20,6 +23,7 @@ function WasteLogger() {
 
   const addWasteItem = async (e) => {
     e.preventDefault();
+    if (!currentUser?.familyId) return;
     const wasteLogRef = firestore.collection('families').doc(currentUser.familyId).collection('wasteLog').doc();
     await wasteLogRef.set({
       ...newWasteItem,

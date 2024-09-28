@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { firestore } from '../firebase';
 
-const SPOONACULAR_API_KEY = 'YOUR_SPOONACULAR_API_KEY';
+const SPOONACULAR_API_KEY = '335591560d414e1ab8fcda61df384cdd';
 
 function RecipeBrowser({ pantryItems, dietaryPreferences, onAddMealToPlan }) {
   const { currentUser } = useAuth();

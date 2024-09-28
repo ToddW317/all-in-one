@@ -1,12 +1,12 @@
 import React from 'react';
 
-const Home = () => {
+function Home() {
   return (
     <div>
-      <h1>Welcome to All in One Family Management</h1>
-      <p>Your central hub for family organization and collaboration.</p>
+      <h1>Welcome Home</h1>
+      {/* Add your home page content here */}
     </div>
   );
-};
+}
 
 export default Home;
