@@ -2,30 +2,36 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 
-function Login() {
+function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { signup } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (password !== confirmPassword) {
+      return setError('Passwords do not match');
+    }
+
     try {
       setError('');
       setLoading(true);
-      await login(email, password);
+      await signup(email, password);
       navigate('/');
     } catch (error) {
-      setError('Failed to log in: ' + error.message);
+      setError('Failed to create an account: ' + error.message);
     }
     setLoading(false);
   };
 
   return (
-    <div className="login-page">
-      <h2>Login</h2>
+    <div className="signup-page">
+      <h2>Sign Up</h2>
       {error && <p className="error">{error}</p>}
       <form onSubmit={handleSubmit}>
         <div>
@@ -48,15 +54,25 @@ function Login() {
             required
           />
         </div>
+        <div>
+          <label htmlFor="confirm-password">Confirm Password</label>
+          <input
+            type="password"
+            id="confirm-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+          />
+        </div>
         <button type="submit" disabled={loading}>
-          {loading ? 'Logging in...' : 'Log In'}
+          {loading ? 'Signing up...' : 'Sign Up'}
         </button>
       </form>
       <p>
-        Don't have an account? <Link to="/signup">Sign Up</Link>
+        Already have an account? <Link to="/login">Log In</Link>
       </p>
     </div>
   );
 }
 
-export default Login;
+export default Signup;

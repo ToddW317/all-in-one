@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { firestore } from '../firebase';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import './AIAssistant.css';
 import DatePicker from 'react-datepicker'; // You'll need to install this package
 import 'react-datepicker/dist/react-datepicker.css';
@@ -9,7 +10,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 const GEMINI_API_KEY = 'AIzaSyBsyGT48F-mMOHOHQl-lob3Z6IENclpIZA';
 const SPOONACULAR_API_KEY = '335591560d414e1ab8fcda61df384cdd';
 
-function AIAssistant({ pantryItems, onAddMealToPlan }) {
+function AIAssistant({ pantryItems, onAddMealToPlan, refreshMealPlan }) {
   const { currentUser } = useAuth();
   const [userInput, setUserInput] = useState('');
   const [suggestedRecipes, setSuggestedRecipes] = useState([]);
@@ -21,6 +22,7 @@ function AIAssistant({ pantryItems, onAddMealToPlan }) {
   const [selectedMealType, setSelectedMealType] = useState('lunch');
   const [showAddToPlanModal, setShowAddToPlanModal] = useState(false);
   const [recipeToAdd, setRecipeToAdd] = useState(null);
+  const [addingMeal, setAddingMeal] = useState(false);
 
   const askGemini = async () => {
     setLoading(true);
@@ -188,15 +190,31 @@ function AIAssistant({ pantryItems, onAddMealToPlan }) {
     setShowAddToPlanModal(true);
   };
 
-  const confirmAddToMealPlan = () => {
-    if (recipeToAdd) {
-      onAddMealToPlan({
-        ...recipeToAdd,
-        date: selectedDate,
-        mealType: selectedMealType
-      });
-      setShowAddToPlanModal(false);
-      setRecipeToAdd(null);
+  const confirmAddToMealPlan = async () => {
+    if (recipeToAdd && currentUser?.familyId) {
+      setAddingMeal(true);
+      try {
+        const mealToAdd = {
+          ...recipeToAdd,
+          date: selectedDate,
+          mealType: selectedMealType,
+          addedBy: currentUser.uid,
+          addedAt: new Date()
+        };
+        
+        await onAddMealToPlan(mealToAdd);
+        
+        refreshMealPlan();
+        
+        setShowAddToPlanModal(false);
+        setRecipeToAdd(null);
+        setAddingMeal(false);
+        alert('Meal successfully added to your plan!');
+      } catch (error) {
+        console.error('Error adding meal to plan:', error);
+        setError('Failed to add meal to plan. Please try again.');
+        setAddingMeal(false);
+      }
     }
   };
 
@@ -220,8 +238,10 @@ function AIAssistant({ pantryItems, onAddMealToPlan }) {
             <option value="dinner">Dinner</option>
             <option value="snack">Snack</option>
           </select>
-          <button onClick={confirmAddToMealPlan}>Confirm</button>
-          <button onClick={() => setShowAddToPlanModal(false)}>Cancel</button>
+          <button onClick={confirmAddToMealPlan} disabled={addingMeal} className="confirm-button">
+            {addingMeal ? 'Adding...' : 'Confirm'}
+          </button>
+          <button onClick={() => setShowAddToPlanModal(false)} className="cancel-button">Cancel</button>
         </div>
       </div>
     );
@@ -238,7 +258,7 @@ function AIAssistant({ pantryItems, onAddMealToPlan }) {
               <li key={index}>{ingredient.original}</li>
             ))}
           </ul>
-          <button onClick={onClose}>Close</button>
+          <button onClick={onClose} className="close-button">Close</button>
         </div>
       </div>
     );

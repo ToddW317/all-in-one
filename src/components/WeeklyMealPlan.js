@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
 import { firestore } from '../firebase';
 import './WeeklyMealPlan.css';
 import axios from 'axios';
@@ -21,15 +21,11 @@ function WeeklyMealPlan({ refreshTrigger }) {
   const [startDate, setStartDate] = useState(getStartOfWeek(new Date()));
   const [selectedMeal, setSelectedMeal] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (currentUser?.familyId) {
-      console.log('Fetching weekly meal plan...');
-      fetchWeeklyMealPlan();
-    }
-  }, [currentUser, startDate, refreshTrigger]);
+  const fetchWeeklyMealPlan = useCallback(async () => {
+    if (!currentUser?.familyId) return;
 
-  const fetchWeeklyMealPlan = async () => {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + 7);
 
@@ -38,23 +34,35 @@ function WeeklyMealPlan({ refreshTrigger }) {
     const mealPlanRef = collection(firestore, 'families', currentUser.familyId, 'mealPlan');
     const q = query(
       mealPlanRef,
-      where('date', '>=', startDate),
-      where('date', '<', endDate)
+      where('date', '>=', Timestamp.fromDate(startDate)),
+      where('date', '<', Timestamp.fromDate(endDate))
     );
 
-    const snapshot = await getDocs(q);
-    const meals = {};
-    snapshot.forEach(doc => {
-      const meal = doc.data();
-      const date = meal.date.toDate().toDateString();
-      if (!meals[date]) {
-        meals[date] = [];
-      }
-      meals[date].push(meal);
-    });
-    console.log('Fetched weekly meal plan:', meals);
-    setWeeklyPlan(meals);
-  };
+    try {
+      const snapshot = await getDocs(q);
+      const meals = {};
+      snapshot.forEach(doc => {
+        const meal = doc.data();
+        const date = meal.date.toDate().toDateString();
+        if (!meals[date]) {
+          meals[date] = [];
+        }
+        meals[date].push(meal);
+      });
+      console.log('Fetched weekly meal plan:', meals);
+      setWeeklyPlan(meals);
+    } catch (error) {
+      console.error('Error fetching weekly meal plan:', error);
+      setError('Failed to fetch weekly meal plan.');
+    }
+  }, [currentUser, startDate]);
+
+  useEffect(() => {
+    if (currentUser?.familyId) {
+      console.log('Fetching weekly meal plan...');
+      fetchWeeklyMealPlan();
+    }
+  }, [currentUser, startDate, refreshTrigger, fetchWeeklyMealPlan]);
 
   const getDayName = (date) => {
     return new Date(date).toLocaleDateString('en-US', { weekday: 'long' });
@@ -92,28 +100,14 @@ function WeeklyMealPlan({ refreshTrigger }) {
     return (
       <div className="modal-overlay">
         <div className="modal-content">
-          <h2>{meal.title}</h2>
+          <h2>{meal.title} Ingredients</h2>
           <img src={meal.image} alt={meal.title} />
-          <h3>Ingredients:</h3>
           <ul>
             {meal.extendedIngredients.map((ingredient, index) => (
               <li key={index}>{ingredient.original}</li>
             ))}
           </ul>
-          <h3>Instructions:</h3>
-          <ol>
-            {meal.analyzedInstructions[0].steps.map((step, index) => (
-              <li key={index}>{step.step}</li>
-            ))}
-          </ol>
-          <h3>Nutritional Information:</h3>
-          <ul>
-            <li>Calories: {meal.nutrition.nutrients.find(n => n.name === "Calories").amount} kcal</li>
-            <li>Protein: {meal.nutrition.nutrients.find(n => n.name === "Protein").amount}g</li>
-            <li>Carbohydrates: {meal.nutrition.nutrients.find(n => n.name === "Carbohydrates").amount}g</li>
-            <li>Fat: {meal.nutrition.nutrients.find(n => n.name === "Fat").amount}g</li>
-          </ul>
-          <button onClick={onClose}>Close</button>
+          <button onClick={onClose} className="close-button">Close</button>
         </div>
       </div>
     );

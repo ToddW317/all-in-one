@@ -1,10 +1,11 @@
 import React from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Navigation from './Navigation';
 import Home from '../pages/Home';
 import Activities from '../pages/Activities';
 import Login from '../pages/Login';
+import Signup from '../pages/Signup';
 import TaskManager from './TaskManager';
 import Calendar from '../pages/Calendar';
 import MealPlanner from './MealPlanner';
@@ -18,8 +19,13 @@ const Communication = () => <div>Communication Page</div>;
 const Profile = () => <div>Profile Page</div>;
 const Settings = () => <div>Settings Page</div>;
 
-function AppContent() {
-  const { loading } = useAuth();
+function PrivateRoute({ children }) {
+  const { currentUser } = useAuth();
+  return currentUser ? children : <Navigate to="/login" />;
+}
+
+export function AppContent() {
+  const { currentUser, loading } = useAuth();
 
   if (loading) {
     return <div>Loading...</div>;
@@ -27,24 +33,23 @@ function AppContent() {
 
   return (
     <div className="App">
-      <Navigation />
+      {currentUser && <Navigation />}
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/calendar" element={<Calendar />} />
-        <Route path="/tasks" element={<TaskManager />} />
-        <Route path="/meals" element={<MealPlanner />} />
-        <Route path="/budget" element={<Budget />} />
-        <Route path="/health" element={<Health />} />
-        <Route path="/education" element={<Education />} />
-        <Route path="/documents" element={<Documents />} />
-        <Route path="/communication" element={<Communication />} />
-        <Route path="/activities/*" element={<Activities />} />
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/settings" element={<Settings />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
+        <Route path="/calendar" element={<PrivateRoute><Calendar /></PrivateRoute>} />
+        <Route path="/tasks" element={<PrivateRoute><TaskManager /></PrivateRoute>} />
+        <Route path="/meals" element={<PrivateRoute><MealPlanner /></PrivateRoute>} />
+        <Route path="/budget" element={<PrivateRoute><Budget /></PrivateRoute>} />
+        <Route path="/health" element={<PrivateRoute><Health /></PrivateRoute>} />
+        <Route path="/education" element={<PrivateRoute><Education /></PrivateRoute>} />
+        <Route path="/documents" element={<PrivateRoute><Documents /></PrivateRoute>} />
+        <Route path="/communication" element={<PrivateRoute><Communication /></PrivateRoute>} />
+        <Route path="/activities/*" element={<PrivateRoute><Activities /></PrivateRoute>} />
+        <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
+        <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
       </Routes>
     </div>
   );
 }
-
-export default AppContent;
